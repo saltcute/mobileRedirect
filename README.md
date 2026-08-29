@@ -179,6 +179,7 @@ the rest.
 | `npm run probe` finds nothing | It now says which case applies: *no module attached* (check `lsusb \| grep 1e0e`, the cable, and USB power) or *attached but no AT port bound* (check `lsmod \| grep option` and `dmesg \| grep -i ttyUSB`) |
 | `Device or resource busy` opening the port | Another process holds it — find it with `sudo fuser -v /dev/ttyUSB*`. Nearly always ModemManager on Raspberry Pi OS: `sudo systemctl mask --now ModemManager`. Installing the udev rule alone is **not** enough if ModemManager already had the port: `ID_MM_DEVICE_IGNORE` is only read when the device appears, so restart it or replug the module |
 | Commands time out, responses look garbled | ModemManager is on the port — confirm the udev rule applied, or `sudo systemctl mask --now ModemManager` |
+| Modem vanishes during `/network` or `/send` | The module left the USB bus — it reset or browned out. A SIM7070 draws **~2A peaks while transmitting**, and attaching/sending is when it transmits hardest, so bus power alone is often not enough. Use a powered hub or a dedicated 5V/2A+ supply. The gateway re-attaches automatically once it re-enumerates (`module came back after disappearing` in the log) |
 | SMS stop arriving | SIM storage full — `/status` shows occupancy; check `AT+CMGD` errors in the log |
 | Bot ignores you | Your Telegram user ID is not in `ALLOWED_USER_IDS` (rejections are logged) |
 

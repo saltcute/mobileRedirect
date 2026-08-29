@@ -3,6 +3,7 @@ import { noModemMessage, resolveModem } from '../deps.js';
 import { escapeHtml } from '../format.js';
 import { isValidDestination, normaliseNumber } from '../../modem/parse.js';
 import type { Modem } from '../../modem/modem.js';
+import { diagnoseChannelLoss } from '../../modem/open-errors.js';
 
 const USAGE = 'Usage: <code>/send +4915112345678 your message</code>';
 
@@ -70,8 +71,11 @@ export async function deliver(
   } catch (err) {
     const message = (err as Error).message;
     deps.logger.error({ modem: modem.label, target, err: message }, 'sms send failed');
+    const lost = diagnoseChannelLoss(message);
     await ctx.reply(
-      `❌ Send failed via <b>${escapeHtml(modem.label)}</b>: ${escapeHtml(message)}`,
+      lost
+        ? `⚠️ Send failed via <b>${escapeHtml(modem.label)}</b> — ${escapeHtml(lost)}`
+        : `❌ Send failed via <b>${escapeHtml(modem.label)}</b>: ${escapeHtml(message)}`,
       { parse_mode: 'HTML' },
     );
   }

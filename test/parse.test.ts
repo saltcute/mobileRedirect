@@ -17,7 +17,7 @@ import {
   normaliseNumber,
   isValidDestination,
 } from '../src/modem/parse.ts';
-import { diagnoseOpenError } from '../src/modem/open-errors.ts';
+import { diagnoseChannelLoss, diagnoseOpenError } from '../src/modem/open-errors.ts';
 
 describe('signal strength', () => {
   test('maps CSQ across its linear range', () => {
@@ -193,5 +193,24 @@ describe('open error diagnosis', () => {
 
   test('stays quiet on an unrecognised failure', () => {
     assert.equal(diagnoseOpenError('Error: No such file or directory'), null);
+  });
+
+  test('explains a channel that died mid-command', () => {
+    // What the Pi logged when the module dropped off during network selection.
+    const hint = diagnoseChannelLoss('serial port closed');
+    assert.match(hint ?? '', /dropped off the USB bus/);
+    assert.match(hint ?? '', /power supply/);
+    assert.match(hint ?? '', /re-attaches automatically/);
+  });
+
+  test('treats device-gone errno values as channel loss too', () => {
+    for (const err of ['read ENXIO', 'write ENODEV', 'Error: EIO']) {
+      assert.ok(diagnoseChannelLoss(err), `${err} should be recognised`);
+    }
+  });
+
+  test('does not mistake a modem rejection for channel loss', () => {
+    // +CME ERROR means the modem answered; the channel is fine.
+    assert.equal(diagnoseChannelLoss('Command "AT+COPS=?" failed: +CME ERROR: 30'), null);
   });
 });

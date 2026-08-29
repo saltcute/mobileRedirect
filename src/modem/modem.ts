@@ -134,9 +134,14 @@ export class Modem extends EventEmitter {
   /**
    * The module emits boot chatter (`RDY`, `SMS Ready`, `PB DONE`) for several
    * seconds after enumeration and ignores commands until it settles, so the
-   * first `AT` gets a few attempts.
+   * first `AT` gets several attempts.
+   *
+   * Sized for the worst case rather than a cold plug: after a firmware reset or
+   * a brownout the module re-enumerates and needs 10-15s before it answers, and
+   * giving up early there costs a full retry cooldown before the gateway tries
+   * again.
    */
-  private async handshake(attempts = 5): Promise<void> {
+  private async handshake(attempts = 12): Promise<void> {
     for (let i = 1; i <= attempts; i++) {
       try {
         await this.channel.execute('AT', 2000);

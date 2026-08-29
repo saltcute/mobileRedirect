@@ -4,6 +4,7 @@ import { noModemMessage, resolveModem } from '../deps.js';
 import { escapeHtml } from '../format.js';
 import type { Modem } from '../../modem/modem.js';
 import { LTE_MODE_VALUES, NETWORK_MODE_VALUES } from '../../modem/parse.js';
+import { diagnoseChannelLoss } from '../../modem/open-errors.js';
 
 const CALLBACK_PREFIX = 'net:';
 
@@ -77,7 +78,13 @@ export function registerNetwork(bot: GatewayBot, deps: BotDeps): void {
     } catch (err) {
       const message = (err as Error).message;
       deps.logger.error({ modem: modem.label, err: message }, 'network command failed');
-      await ctx.reply(`❌ ${escapeHtml(message)}`, { parse_mode: 'HTML' });
+      const lost = diagnoseChannelLoss(message);
+      await ctx.reply(
+        lost
+          ? `⚠️ <b>${escapeHtml(modem.label)}</b> — ${escapeHtml(lost)}`
+          : `❌ ${escapeHtml(message)}`,
+        { parse_mode: 'HTML' },
+      );
     }
   });
 
@@ -98,7 +105,14 @@ export function registerNetwork(bot: GatewayBot, deps: BotDeps): void {
         { parse_mode: 'HTML' },
       );
     } catch (err) {
-      await ctx.reply(`❌ ${escapeHtml((err as Error).message)}`, { parse_mode: 'HTML' });
+      const message = (err as Error).message;
+      const lost = diagnoseChannelLoss(message);
+      await ctx.reply(
+        lost
+          ? `⚠️ <b>${escapeHtml(modem.label)}</b> — ${escapeHtml(lost)}`
+          : `❌ ${escapeHtml(message)}`,
+        { parse_mode: 'HTML' },
+      );
     }
   });
 }

@@ -36,6 +36,8 @@ export class ModemRegistry extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
   private scanning = false;
   private lastEmptyReason: string | null = null;
+  /** When a module vanished from a slot, so recovery can be reported. */
+  private readonly lostAt = new Map<string, number>();
   private stopped = false;
 
   constructor(opts: RegistryOptions) {
@@ -111,12 +113,27 @@ export class ModemRegistry extends EventEmitter {
 
       // Drop modems whose USB slot no longer reports a SIMCom AT port.
       for (const [location, modem] of this.modems) {
-        if (!present.has(location) || !modem.isOpen) {
-          this.log.info({ modem: modem.label, location }, 'modem detached');
-          await modem.close().catch(() => undefined);
-          this.modems.delete(location);
-          this.emit('detached', modem);
+        const vanished = !present.has(location);
+        if (!vanished && modem.isOpen) continue;
+
+        if (vanished) {
+          // The module left the USB bus entirely, which is a different problem
+          // from a closed port: either the firmware reset itself, or the supply
+          // sagged. A SIM7070 draws ~2A peaks while transmitting, and an attach
+          // attempt is exactly when it transmits hardest.
+          this.log.warn(
+            { modem: modem.label, location },
+            'module disappeared from USB — it reset or browned out; if this repeats ' +
+              'during network operations, suspect the power supply before the firmware',
+          );
+          this.lostAt.set(location, Date.now());
+        } else {
+          this.log.info({ modem: modem.label, location }, 'modem port closed');
         }
+
+        await modem.close().catch(() => undefined);
+        this.modems.delete(location);
+        this.emit('detached', modem);
       }
 
       for (const candidate of candidates) {
@@ -156,10 +173,23 @@ export class ModemRegistry extends EventEmitter {
     }
 
     this.cooldowns.delete(candidate.usbLocation);
+    const lostAt = this.lostAt.get(candidate.usbLocation);
+    if (lostAt !== undefined) {
+      this.lostAt.delete(candidate.usbLocation);
+      this.log.info(
+        { modem: modem.label, downMs: Date.now() - lostAt, path: candidate.path },
+        'module came back after disappearing — re-attached',
+      );
+    }
     this.modems.set(candidate.usbLocation, modem);
     modem.on('sms', (sms: IncomingSms) => this.emit('sms', sms, modem));
     modem.on('lost', () => {
       this.modems.delete(candidate.usbLocation);
+      this.lostAt.set(candidate.usbLocation, Date.now());
+      // Release the serial handle. Without this the descriptor leaks on every
+      // re-enumeration, and the stale handle can make the re-attach fail with
+      // EBUSY -- a self-inflicted version of the ModemManager problem.
+      void modem.close().catch(() => undefined);
       this.emit('detached', modem);
     });
     this.emit('attached', modem);
