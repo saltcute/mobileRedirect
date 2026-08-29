@@ -48,15 +48,16 @@ describe('signal strength', () => {
 
 describe('+COPS', () => {
   test('reads operator name and access technology', () => {
-    assert.deepEqual(parseCops(['+COPS: 0,0,"Vodafone.de",9']), {
-      name: 'Vodafone.de',
-      accessTechnology: 'NB-IoT',
-    });
+    const op = parseCops(['+COPS: 0,0,"Vodafone.de",9']);
+    assert.equal(op?.name, 'Vodafone.de');
+    assert.equal(op?.accessTechnology, 'NB-IoT');
     assert.equal(parseCops(['+COPS: 0,0,"T-Mobile",7'])?.accessTechnology, 'LTE-M');
   });
 
   test('handles the deregistered short form', () => {
-    assert.deepEqual(parseCops(['+COPS: 0']), { name: null, accessTechnology: null });
+    const op = parseCops(['+COPS: 0']);
+    assert.equal(op?.name, null);
+    assert.equal(op?.accessTechnology, null);
   });
 });
 

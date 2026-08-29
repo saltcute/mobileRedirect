@@ -6,8 +6,12 @@ import type { SerialCandidate } from './discovery.js';
 import type { Repo } from '../store/repo.js';
 import type { Logger } from '../logger.js';
 import {
+  parseCeer,
+  parseCmnb,
+  parseCnmp,
   parseCnum,
   parseCops,
+  parseCopsScan,
   parseCpin,
   parseCpms,
   parseCpsi,
@@ -18,6 +22,7 @@ import {
   normaliseNumber,
   type OperatorInfo,
   type RegistrationInfo,
+  type ScannedOperator,
   type SignalInfo,
   type StorageInfo,
 } from './parse.js';
@@ -258,6 +263,75 @@ export class Modem extends EventEmitter {
       // As above.
     }
     return { carrier, bars };
+  }
+
+  // ------------------------------------------------------- network selection
+
+  /** Current carrier selection and radio preferences. */
+  async networkConfig(): Promise<{
+    operator: OperatorInfo | null;
+    registration: RegistrationInfo | null;
+    networkMode: { value: number; label: string } | null;
+    lteMode: { value: number; label: string } | null;
+    lastError: string | null;
+  }> {
+    const read = async <T>(cmd: string, parse: (l: string[]) => T): Promise<T | null> => {
+      try {
+        return parse(await this.channel.execute(cmd, 8000));
+      } catch {
+        return null;
+      }
+    };
+    return {
+      operator: await read('AT+COPS?', parseCops),
+      registration: await read('AT+CREG?', (l) => parseCreg(l, 'CREG')),
+      networkMode: await read('AT+CNMP?', parseCnmp),
+      lteMode: await read('AT+CMNB?', parseCmnb),
+      // Why the last attach attempt was refused, when it was.
+      lastError: await read('AT+CEER', parseCeer),
+    };
+  }
+
+  /**
+   * Scan for visible networks.
+   *
+   * Slow (30-120s) and disruptive: the module drops its current registration for
+   * the duration. The channel queue makes every other command on this modem wait,
+   * which is why the timeout is generous.
+   */
+  async scanNetworks(): Promise<ScannedOperator[]> {
+    // Report operators numerically so the PLMN is always present to select by.
+    await this.channel.execute('AT+COPS=3,2').catch(() => undefined);
+    return parseCopsScan(await this.channel.execute('AT+COPS=?', 180_000));
+  }
+
+  /**
+   * Pin the modem to one carrier, optionally on a specific access technology.
+   *
+   * Uses mode 4 (manual with automatic fallback) rather than mode 1 on purpose:
+   * the selection persists across reboots, so a hard manual lock onto a network
+   * that later disappears leaves a modem that will not attach to anything, with
+   * no obvious cause.
+   */
+  async selectNetwork(plmn: string, act?: number): Promise<void> {
+    if (!/^\d{5,6}$/.test(plmn)) throw new Error(`"${plmn}" is not a numeric PLMN`);
+    const suffix = act === undefined ? '' : `,${act}`;
+    await this.channel.execute(`AT+COPS=4,2,"${plmn}"${suffix}`, 180_000);
+  }
+
+  /** Return to automatic carrier selection. */
+  async selectAutomaticNetwork(): Promise<void> {
+    await this.channel.execute('AT+COPS=0', 180_000);
+  }
+
+  /** `AT+CNMP` — which radio generations to try. Persists to NVM. */
+  async setNetworkMode(value: number): Promise<void> {
+    await this.channel.execute(`AT+CNMP=${value}`, 15_000);
+  }
+
+  /** `AT+CMNB` — Cat-M, NB-IoT, or both. Persists to NVM. */
+  async setLteMode(value: number): Promise<void> {
+    await this.channel.execute(`AT+CMNB=${value}`, 15_000);
   }
 
   /** Sends an SMS and records it. Throws if the modem rejects any segment. */

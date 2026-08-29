@@ -12,6 +12,32 @@ sender on the SIM that received it. Multiple modules on one host are supported.
 | `/send <number> <text>` | Send an SMS from the selected SIM |
 | `/history [n\|all]` | Recent messages, newest last |
 | `/status` | Signal, carrier, roaming, registration, SIM state, SMS storage |
+| `/network` | Carrier selection and radio settings — see below |
+
+### Carrier and radio selection
+
+```
+/network                              current carrier, radio mode, last attach error
+/network scan                         list visible carriers (slow, drops registration)
+/network auto                         automatic carrier selection
+/network use <plmn> [gsm|catm|nbiot]  pin one carrier
+/network rat <catm|nbiot|both>        LTE-IoT technology (AT+CMNB)
+/network mode <auto|gsm|lte|gsm+lte>  radio generations (AT+CNMP)
+```
+
+Mainly for diagnosing `registration denied`, which means the network *answered
+and refused* the attach — so the antenna, SIM and driver are all working, and the
+cause is subscription- or technology-side. `/network scan` marks each carrier
+`available`, `current` or **`forbidden`**; forbidden is the network refusing this
+SIM, which no modem setting will change. If the carrier is *not* forbidden but
+registration still fails, try a different `/network rat` — carriers provision
+Cat-M and NB-IoT separately, and a SIM enabled for one will be refused on the
+other.
+
+Carrier pinning uses `AT+COPS=4` (manual **with automatic fallback**) rather than
+`AT+COPS=1`. The selection persists across reboots, so a hard lock onto a network
+that later disappears would leave a modem that attaches to nothing with no
+obvious cause. `/network auto` reverts.
 
 **Replying:** every inbound SMS is posted as a Telegram message. Use Telegram's
 native reply on it and the text goes back to that sender — on the modem that

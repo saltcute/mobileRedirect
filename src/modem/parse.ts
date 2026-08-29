@@ -56,7 +56,18 @@ const ACCESS_TECH: Record<number, string> = {
 export interface OperatorInfo {
   name: string | null;
   accessTechnology: string | null;
+  /** 0 auto, 1 manual, 2 deregistered, 4 manual with automatic fallback. */
+  selectionMode: number | null;
+  selectionModeLabel: string | null;
 }
+
+const SELECTION_MODE: Record<number, string> = {
+  0: 'automatic',
+  1: 'manual (locked)',
+  2: 'deregistered',
+  3: 'format only',
+  4: 'manual with automatic fallback',
+};
 
 /** `AT+COPS?` -> `+COPS: <mode>[,<format>,<oper>[,<AcT>]]` */
 export function parseCops(lines: string[]): OperatorInfo | null {
@@ -64,10 +75,117 @@ export function parseCops(lines: string[]): OperatorInfo | null {
     const m = /^\+COPS:\s*(\d+)(?:,\s*(\d+),\s*"?([^",]*)"?(?:,\s*(\d+))?)?/.exec(line);
     if (!m) continue;
     const act = m[4] === undefined ? null : (ACCESS_TECH[Number(m[4])] ?? `AcT ${m[4]}`);
-    return { name: m[3]?.trim() || null, accessTechnology: act };
+    const mode = m[1] === undefined ? null : Number(m[1]);
+    return {
+      name: m[3]?.trim() || null,
+      accessTechnology: act,
+      selectionMode: mode,
+      selectionModeLabel: mode === null ? null : (SELECTION_MODE[mode] ?? `mode ${mode}`),
+    };
   }
   return null;
 }
+
+/** Availability flags in an `AT+COPS=?` scan result. */
+const OPERATOR_STATUS: Record<number, string> = {
+  0: 'unknown',
+  1: 'available',
+  2: 'current',
+  3: 'forbidden',
+};
+
+export interface ScannedOperator {
+  status: number;
+  statusLabel: string;
+  /** True when the network itself refuses this SIM — a carrier-side answer. */
+  forbidden: boolean;
+  longName: string;
+  shortName: string;
+  /** Numeric PLMN, MCC+MNC. */
+  plmn: string;
+  act: number | null;
+  actLabel: string | null;
+}
+
+/**
+ * `AT+COPS=?` -> `+COPS: (2,"Bell","Bell","302610",7),(3,"Rogers",...),,(0,1,2,3,4),(0,1,2)`
+ *
+ * Only tuples carrying quoted names are networks; the trailing bare-number
+ * tuples list the modes and formats the module supports.
+ */
+export function parseCopsScan(lines: string[]): ScannedOperator[] {
+  const joined = lines.join('');
+  const entry = /\((\d+),"([^"]*)","([^"]*)","(\d+)"(?:,(\d+))?\)/g;
+  const found: ScannedOperator[] = [];
+
+  for (const m of joined.matchAll(entry)) {
+    const status = Number(m[1]);
+    const act = m[5] === undefined ? null : Number(m[5]);
+    found.push({
+      status,
+      statusLabel: OPERATOR_STATUS[status] ?? `status ${status}`,
+      forbidden: status === 3,
+      longName: m[2] ?? '',
+      shortName: m[3] ?? '',
+      plmn: m[4] ?? '',
+      act,
+      actLabel: act === null ? null : (ACCESS_TECH[act] ?? `AcT ${act}`),
+    });
+  }
+  return found;
+}
+
+/** `AT+CNMP?` — which radio generations the module will try. */
+const NETWORK_MODE: Record<number, string> = {
+  2: 'automatic',
+  13: 'GSM only',
+  38: 'LTE only',
+  51: 'GSM + LTE',
+};
+
+export function parseCnmp(lines: string[]): { value: number; label: string } | null {
+  for (const line of lines) {
+    const m = /^\+CNMP:\s*(\d+)/.exec(line);
+    if (!m?.[1]) continue;
+    const value = Number(m[1]);
+    return { value, label: NETWORK_MODE[value] ?? `mode ${value}` };
+  }
+  return null;
+}
+
+/**
+ * `AT+CMNB?` — which LTE-IoT technology to attach with.
+ *
+ * Carriers provision Cat-M and NB-IoT separately, so a SIM enabled for one and
+ * a module set to the other is refused at attach with a perfectly good SIM.
+ */
+const LTE_MODE: Record<number, string> = {
+  1: 'Cat-M',
+  2: 'NB-IoT',
+  3: 'Cat-M + NB-IoT',
+};
+
+export function parseCmnb(lines: string[]): { value: number; label: string } | null {
+  for (const line of lines) {
+    const m = /^\+CMNB:\s*(\d+)/.exec(line);
+    if (!m?.[1]) continue;
+    const value = Number(m[1]);
+    return { value, label: LTE_MODE[value] ?? `mode ${value}` };
+  }
+  return null;
+}
+
+/** `AT+CEER` -> extended error / attach reject cause. */
+export function parseCeer(lines: string[]): string | null {
+  for (const line of lines) {
+    const m = /^\+CEER:\s*(.+)$/.exec(line);
+    if (m?.[1]) return m[1].trim();
+  }
+  return null;
+}
+
+export const NETWORK_MODE_VALUES = NETWORK_MODE;
+export const LTE_MODE_VALUES = LTE_MODE;
 
 const REGISTRATION_STATE: Record<number, string> = {
   0: 'not registered',

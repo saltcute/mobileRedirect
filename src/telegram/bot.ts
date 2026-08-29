@@ -4,6 +4,7 @@ import { registerSelect } from './commands/select.js';
 import { registerSend } from './commands/send.js';
 import { registerHistory } from './commands/history.js';
 import { registerStatus } from './commands/status.js';
+import { registerNetwork } from './commands/network.js';
 import { registerReplyRouter } from './reply-router.js';
 import { formatIncomingSms } from './format.js';
 import type { IncomingSms } from '../modem/sms-rx.js';
@@ -16,6 +17,7 @@ const HELP = [
   '/send <code>&lt;number&gt; &lt;text&gt;</code> — send an SMS',
   '/history <code>[n|all]</code> — recent messages',
   '/status — signal, carrier, roaming, network',
+  '/network — carrier selection and radio settings (<code>/network</code> for options)',
   '',
   'Incoming SMS are posted here. <b>Reply to one</b> to answer that sender on the SIM that received it.',
 ].join('\n');
@@ -59,6 +61,7 @@ export function createBot(deps: BotDeps): Gateway {
   registerSend(bot, deps);
   registerHistory(bot, deps);
   registerStatus(bot, deps);
+  registerNetwork(bot, deps);
   // Must come last: it claims plain text messages that no command matched.
   registerReplyRouter(bot, deps);
 
@@ -105,6 +108,7 @@ export async function publishCommandMenu(bot: GatewayBot): Promise<void> {
     { command: 'send', description: 'Send an SMS: /send <number> <text>' },
     { command: 'history', description: 'Recent messages' },
     { command: 'status', description: 'Signal, carrier, roaming, network' },
+    { command: 'network', description: 'Carrier selection and radio settings' },
     { command: 'help', description: 'Show usage' },
   ]);
 }
