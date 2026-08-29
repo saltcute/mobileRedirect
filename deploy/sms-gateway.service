@@ -1,0 +1,48 @@
+# SMS <-> Telegram gateway (Raspberry Pi / systemd system service)
+#
+# A *system* service rather than a user service on purpose: user services need
+# `loginctl enable-linger` to start on a headless boot, which is easy to forget
+# and fails silently.
+#
+# Install:
+#   sudo cp deploy/sms-gateway.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sms-gateway
+
+[Unit]
+Description=SMS <-> Telegram gateway (SIM7070G)
+Documentation=file:/opt/mobile-redirect/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=smsgw
+Group=smsgw
+WorkingDirectory=/opt/mobile-redirect
+EnvironmentFile=/etc/mobile-redirect.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=5s
+
+# Telegram outages and USB hiccups both surface as crashes; don't let the rate
+# limiter give up on a modem that reconnects a few times in a row.
+StartLimitBurst=0
+
+# systemd creates and owns /var/lib/mobile-redirect — point DB_PATH there.
+StateDirectory=mobile-redirect
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Note: PrivateDevices must stay off — it would hide /dev/ttyUSB* from the service.
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

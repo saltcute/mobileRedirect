@@ -1,0 +1,31 @@
+{
+  "name": "mobile-redirect",
+  "version": "1.0.0",
+  "description": "Bidirectional SMS <-> Telegram gateway for SIMCom SIM7070G modules",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/main.ts",
+    "probe": "node --env-file-if-exists=.env --import tsx scripts/probe.ts",
+    "at-console": "node --env-file-if-exists=.env --import tsx scripts/at-console.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "grammy": "^1.46.0",
+    "node-sms-pdu": "^0.3.0",
+    "pino": "^10.3.1",
+    "serialport": "^13.0.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,27 @@
+# SIMCom SIM7070G / SIM7080 / SIM7090 — SMS gateway access
+#
+# Install (substitutes your username):
+#   sed "s/__USER__/$USER/" deploy/99-sim7070.rules | sudo tee /etc/udev/rules.d/99-sim7070.rules
+#   sudo udevadm control --reload && sudo udevadm trigger
+#
+# Grants the AT control interface (02) to the gateway user. Scoped to SIMCom's
+# vendor id and that one interface — the DIAG, NMEA, QFLOG and DAM interfaces on
+# the same module, and every other serial device on the machine, are untouched.
+#
+# Matching uses ENV{} rather than ATTRS{}, and that is load-bearing: udev requires
+# every ATTRS{} key in a single rule to match on the SAME parent device, but
+# idVendor lives on the USB device (1-6.3.4.1) while bInterfaceNumber lives on the
+# USB interface (1-6.3.4.1:1.2). A rule combining both ATTRS silently never
+# matches. The usb_id builtin exports both values as properties on the tty device
+# itself, which is what these match on. Verify with:
+#   udevadm info --query=property --name=/dev/ttyUSB2 | grep -E 'ID_VENDOR_ID|ID_USB_INTERFACE_NUM'
+
+SUBSYSTEM=="tty", ENV{ID_VENDOR_ID}=="1e0e", ENV{ID_USB_INTERFACE_NUM}=="02", \
+    OWNER="__USER__", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# ModemManager, if installed, opens the AT port and interleaves its own probing,
+# which corrupts responses and can consume +CMTI indications. Raspberry Pi OS
+# ships it enabled, so fence it off from every interface on this module.
+# (One ATTRS key each, so the same-parent restriction above does not apply.)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e0e", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e0e", ENV{ID_MM_DEVICE_IGNORE}="1"
