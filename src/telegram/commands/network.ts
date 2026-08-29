@@ -8,6 +8,23 @@ import { diagnoseChannelLoss } from '../../modem/open-errors.js';
 
 const CALLBACK_PREFIX = 'net:';
 
+const LOCKED_NOTE =
+  '<i>Locked — it will not fall back to another carrier, and the lock survives ' +
+  'reboots. Use /network auto to release it.</i>';
+
+/**
+ * A manual selection that fails leaves the module deregistered rather than on
+ * some other network, so say so instead of reporting a bare command error.
+ */
+function lockFailure(label: string, plmn: string, reason: string): string {
+  return (
+    `❌ <b>${escapeHtml(label)}</b> could not lock to <code>${escapeHtml(plmn)}</code>: ` +
+    `${escapeHtml(reason)}\n\n` +
+    '<i>The module is now deregistered — it does not fall back on its own. ' +
+    'Use /network auto to restore service, or try another carrier.</i>'
+  );
+}
+
 /** Friendly names accepted for AT+CMNB. */
 const LTE_MODES: Record<string, number> = { catm: 1, nbiot: 2, both: 3 };
 
@@ -26,7 +43,7 @@ const USAGE = [
   '<b>/network</b> — current carrier and radio settings',
   '<b>/network scan</b> — list visible carriers (slow, drops registration)',
   '<b>/network auto</b> — automatic carrier selection',
-  '<b>/network use &lt;plmn&gt; [gsm|catm|nbiot]</b> — pin one carrier',
+  '<b>/network use &lt;plmn&gt; [gsm|catm|nbiot]</b> — lock to one carrier (no fallback)',
   '<b>/network rat &lt;catm|nbiot|both&gt;</b> — LTE-IoT technology',
   '<b>/network mode &lt;auto|gsm|lte|gsm+lte&gt;</b> — radio generations',
 ].join('\n');
@@ -96,12 +113,12 @@ export function registerNetwork(bot: GatewayBot, deps: BotDeps): void {
       return;
     }
 
-    await ctx.answerCallbackQuery({ text: `Selecting ${plmn}…` });
+    await ctx.answerCallbackQuery({ text: `Locking to ${plmn}…` });
     try {
       await modem.selectNetwork(plmn, act ? Number(act) : undefined);
       await ctx.reply(
-        `✅ <b>${escapeHtml(modem.label)}</b> pinned to <code>${escapeHtml(plmn)}</code>.\n` +
-          '<i>Falls back to automatic if it becomes unavailable. /network auto to undo.</i>',
+        `✅ <b>${escapeHtml(modem.label)}</b> locked to <code>${escapeHtml(plmn)}</code>.\n` +
+          LOCKED_NOTE,
         { parse_mode: 'HTML' },
       );
     } catch (err) {
@@ -110,7 +127,7 @@ export function registerNetwork(bot: GatewayBot, deps: BotDeps): void {
       await ctx.reply(
         lost
           ? `⚠️ <b>${escapeHtml(modem.label)}</b> — ${escapeHtml(lost)}`
-          : `❌ ${escapeHtml(message)}`,
+          : lockFailure(modem.label, plmn, message),
         { parse_mode: 'HTML' },
       );
     }
@@ -137,6 +154,16 @@ async function showConfig(
   if (cfg.networkMode) lines.push(`  Radio: ${escapeHtml(cfg.networkMode.label)}`);
   if (cfg.lteMode) lines.push(`  LTE-IoT: ${escapeHtml(cfg.lteMode.label)}`);
   if (cfg.lastError) lines.push(`  Last error: <code>${escapeHtml(cfg.lastError)}</code>`);
+
+  // A manual lock that is not registered is the state worth shouting about: the
+  // module will sit there indefinitely rather than trying anything else.
+  if (cfg.operator?.selectionMode === 1 && cfg.registration?.registered === false) {
+    lines.push(
+      '',
+      '⚠️ <b>Locked to a carrier and not registered.</b> This modem will not try',
+      'any other network on its own. Use <code>/network auto</code> to release the lock.',
+    );
+  }
 
   // Registration denied means the network answered and refused, so the radio path
   // is fine — point at the two things that actually explain it.
@@ -230,11 +257,18 @@ async function useNetwork(
     }
   }
 
-  await ctx.reply(`Selecting <code>${escapeHtml(plmn)}</code>…`, { parse_mode: 'HTML' });
-  await modem.selectNetwork(plmn, act);
+  await ctx.reply(`Locking to <code>${escapeHtml(plmn)}</code>…`, { parse_mode: 'HTML' });
+  try {
+    await modem.selectNetwork(plmn, act);
+  } catch (err) {
+    const message = (err as Error).message;
+    if (diagnoseChannelLoss(message)) throw err;
+    await ctx.reply(lockFailure(modem.label, plmn, message), { parse_mode: 'HTML' });
+    return;
+  }
   await ctx.reply(
-    `✅ <b>${escapeHtml(modem.label)}</b> pinned to <code>${escapeHtml(plmn)}</code>.\n` +
-      '<i>Falls back to automatic if unavailable. /network auto to undo.</i>',
+    `✅ <b>${escapeHtml(modem.label)}</b> locked to <code>${escapeHtml(plmn)}</code>.\n` +
+      LOCKED_NOTE,
     { parse_mode: 'HTML' },
   );
 }

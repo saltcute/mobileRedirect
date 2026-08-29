@@ -18,7 +18,11 @@ describe('carrier selection state', () => {
   });
 
   test('distinguishes a hard manual lock from manual-with-fallback', () => {
-    assert.equal(parseCops(['+COPS: 1,2,"302610",7'])?.selectionModeLabel, 'manual (locked)');
+    // /network use applies mode 1; mode 4 is still parsed because a modem may
+    // carry that setting from elsewhere.
+    const locked = parseCops(['+COPS: 1,2,"302610",7']);
+    assert.equal(locked?.selectionMode, 1);
+    assert.equal(locked?.selectionModeLabel, 'manual (locked)');
     assert.equal(
       parseCops(['+COPS: 4,2,"302610",7'])?.selectionModeLabel,
       'manual with automatic fallback',

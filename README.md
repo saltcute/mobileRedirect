@@ -34,10 +34,16 @@ registration still fails, try a different `/network rat` — carriers provision
 Cat-M and NB-IoT separately, and a SIM enabled for one will be refused on the
 other.
 
-Carrier pinning uses `AT+COPS=4` (manual **with automatic fallback**) rather than
-`AT+COPS=1`. The selection persists across reboots, so a hard lock onto a network
-that later disappears would leave a modem that attaches to nothing with no
-obvious cause. `/network auto` reverts.
+`/network use` applies a **hard lock** (`AT+COPS=1`), not manual-with-fallback
+(`AT+COPS=4`). Fallback would silently revert to automatic whenever the chosen
+network refused or was unreachable, which destroys the thing you are testing — a
+selection that "succeeds" tells you nothing if it might have fallen back. A hard
+lock fails loudly instead.
+
+The trade-off is real and deliberate: a failed selection leaves the module
+**deregistered** rather than on some other network, and the lock **persists across
+reboots**. `/network auto` is the only way out, and both `/network` and `/status`
+flag a modem that is locked and unregistered.
 
 **Replying:** every inbound SMS is posted as a Telegram message. Use Telegram's
 native reply on it and the text goes back to that sender — on the modem that

@@ -58,6 +58,11 @@ export function formatStatus(status: ModemStatus): string {
     const roaming = status.registration.roaming ? ' 🌍 roaming' : '';
     lines.push(`  Network: ${escapeHtml(status.registration.description)}${roaming}`);
   }
+  if (status.operator?.selectionMode === 1) {
+    // A hard lock never retries elsewhere, so it must be visible at a glance.
+    const stuck = status.registration?.registered === false ? ' — and not registered' : '';
+    lines.push(`  ⚠️ Carrier locked manually${escapeHtml(stuck)} (/network auto to release)`);
+  }
   if (status.gprsRegistration) {
     lines.push(`  Data: ${escapeHtml(status.gprsRegistration.description)}`);
   }

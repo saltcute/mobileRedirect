@@ -311,17 +311,21 @@ export class Modem extends EventEmitter {
   }
 
   /**
-   * Pin the modem to one carrier, optionally on a specific access technology.
+   * Lock the modem to one carrier, optionally on a specific access technology.
    *
-   * Uses mode 4 (manual with automatic fallback) rather than mode 1 on purpose:
-   * the selection persists across reboots, so a hard manual lock onto a network
-   * that later disappears leaves a modem that will not attach to anything, with
-   * no obvious cause.
+   * Uses mode 1 (manual, no fallback) rather than mode 4. Mode 4 would silently
+   * revert to automatic when the chosen network refuses or is unreachable, which
+   * destroys the answer being looked for: a selection that "succeeds" tells you
+   * nothing if it may have fallen back. Mode 1 fails loudly instead.
+   *
+   * The consequence is that a failed selection leaves the module deregistered
+   * rather than on some other network, and the lock persists across reboots.
+   * `selectAutomaticNetwork()` is the only way out.
    */
   async selectNetwork(plmn: string, act?: number): Promise<void> {
     if (!/^\d{5,6}$/.test(plmn)) throw new Error(`"${plmn}" is not a numeric PLMN`);
     const suffix = act === undefined ? '' : `,${act}`;
-    await this.channel.execute(`AT+COPS=4,2,"${plmn}"${suffix}`, 180_000);
+    await this.channel.execute(`AT+COPS=1,2,"${plmn}"${suffix}`, 180_000);
   }
 
   /** Return to automatic carrier selection. */
