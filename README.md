@@ -33,7 +33,21 @@ npm install
 cp .env.example .env      # then fill in TELEGRAM_BOT_TOKEN and ALLOWED_USER_IDS
 ```
 
-### 1. Grant access to the modem's serial port
+### 1. Stop ModemManager claiming the modem
+
+Raspberry Pi OS enables ModemManager by default, and it opens any port it
+recognises as a modem — the gateway then fails with `Device or resource busy`.
+On a dedicated gateway the simplest fix is to remove it from the picture:
+
+```bash
+sudo systemctl mask --now ModemManager
+```
+
+The udev rule below also sets `ID_MM_DEVICE_IGNORE=1`, but that alone does not
+free a port ModemManager is *already* holding — the property is only consulted
+when the device appears, so it takes effect after a restart or a replug.
+
+### 2. Grant access to the modem's serial port
 
 Ports are owned by `root` with mode `0660`, so the rule below hands the AT
 control interface to your user. It is scoped to SIMCom's vendor id and to
@@ -55,7 +69,7 @@ The rule also sets `ID_MM_DEVICE_IGNORE=1`. ModemManager, which Raspberry Pi OS
 enables by default, otherwise opens the AT port and interleaves its own probing —
 corrupting responses and swallowing new-message indications.
 
-### 2. Confirm the hardware
+### 3. Confirm the hardware
 
 ```bash
 npm run probe
@@ -64,7 +78,7 @@ npm run probe
 Lists every attached module with IMEI, ICCID, carrier and signal. This is the
 check that two modules are told apart correctly — see *Identifying modules* below.
 
-### 3. Run it
+### 4. Run it
 
 ```bash
 npm run dev      # foreground, reloads on change
@@ -136,8 +150,9 @@ the rest.
 | --- | --- |
 | `Permission denied` opening the port | Rule not installed, or it did not match — check with `ls -l /dev/ttyUSB2`; it should be owned by your user, not `root:uucp` |
 | Rule installed but ownership unchanged | The rule must match with `ENV{ID_VENDOR_ID}` + `ENV{ID_USB_INTERFACE_NUM}`, **not** `ATTRS{idVendor}` + `ATTRS{bInterfaceNumber}`: udev requires all `ATTRS{}` in one rule to match the same parent, and those two live on different parents, so the rule silently never fires |
-| `npm run probe` finds nothing | `lsusb \| grep 1e0e`; check the `option` driver bound via `ls /sys/bus/usb-serial/devices/` |
-| Commands time out, responses look garbled | ModemManager is on the port — confirm the udev rule applied, or `sudo systemctl mask ModemManager` |
+| `npm run probe` finds nothing | It now says which case applies: *no module attached* (check `lsusb \| grep 1e0e`, the cable, and USB power) or *attached but no AT port bound* (check `lsmod \| grep option` and `dmesg \| grep -i ttyUSB`) |
+| `Device or resource busy` opening the port | Another process holds it — find it with `sudo fuser -v /dev/ttyUSB*`. Nearly always ModemManager on Raspberry Pi OS: `sudo systemctl mask --now ModemManager`. Installing the udev rule alone is **not** enough if ModemManager already had the port: `ID_MM_DEVICE_IGNORE` is only read when the device appears, so restart it or replug the module |
+| Commands time out, responses look garbled | ModemManager is on the port — confirm the udev rule applied, or `sudo systemctl mask --now ModemManager` |
 | SMS stop arriving | SIM storage full — `/status` shows occupancy; check `AT+CMGD` errors in the log |
 | Bot ignores you | Your Telegram user ID is not in `ALLOWED_USER_IDS` (rejections are logged) |
 

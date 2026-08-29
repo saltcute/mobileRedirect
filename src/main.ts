@@ -34,10 +34,9 @@ async function main(): Promise<void> {
 
   await registry.start();
   if (registry.size === 0) {
-    logger.warn(
-      'no modems attached at startup — the gateway will keep scanning; ' +
-        'if a SIM7070 is plugged in, check port permissions (deploy/99-sim7070.rules)',
-    );
+    // The registry has already logged the specific reason; don't guess at a
+    // different one here.
+    logger.warn('starting with no modems attached — scanning continues in the background');
   }
 
   await publishCommandMenu(gateway.bot).catch((err: Error) =>

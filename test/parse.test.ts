@@ -17,6 +17,7 @@ import {
   normaliseNumber,
   isValidDestination,
 } from '../src/modem/parse.ts';
+import { diagnoseOpenError } from '../src/modem/open-errors.ts';
 
 describe('signal strength', () => {
   test('maps CSQ across its linear range', () => {
@@ -174,5 +175,22 @@ describe('number handling', () => {
     assert.equal(isValidDestination('not-a-number'), false);
     assert.equal(isValidDestination('+49abc'), false);
     assert.equal(isValidDestination('12'), false);
+  });
+});
+
+describe('open error diagnosis', () => {
+  test('recognises a permissions failure', () => {
+    const hint = diagnoseOpenError('Error: Permission denied, cannot open /dev/ttyUSB2');
+    assert.match(hint ?? '', /99-sim7070\.rules/);
+  });
+
+  test('recognises a port already claimed by another process', () => {
+    // The exact string serialport surfaces on the Pi when ModemManager holds it.
+    const hint = diagnoseOpenError('Error: Device or resource busy, cannot open /dev/ttyUSB8');
+    assert.match(hint ?? '', /ModemManager/);
+  });
+
+  test('stays quiet on an unrecognised failure', () => {
+    assert.equal(diagnoseOpenError('Error: No such file or directory'), null);
   });
 });

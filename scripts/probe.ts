@@ -4,9 +4,10 @@
  * Needs no Telegram token — this is the first thing to run after wiring up the
  * udev rule, and the check that two modules are told apart correctly.
  */
-import { discoverSerialCandidates } from '../src/modem/discovery.js';
+import { explainEmptyScan, scanForModems } from '../src/modem/discovery.js';
 import { AtChannel } from '../src/modem/at-channel.js';
 import { logger } from '../src/logger.js';
+import { diagnoseOpenError } from '../src/modem/open-errors.js';
 import {
   parseCops,
   parseCpin,
@@ -22,12 +23,11 @@ import {
 const log = logger.child({ component: 'probe' });
 
 async function main(): Promise<void> {
-  const candidates = await discoverSerialCandidates(log);
+  const report = await scanForModems(log);
+  const candidates = report.candidates;
 
   if (candidates.length === 0) {
-    console.log('No SIMCom AT ports found.');
-    console.log('  · Is the module plugged in?  lsusb | grep 1e0e');
-    console.log('  · Is the option driver bound? ls /sys/bus/usb-serial/devices/');
+    console.log(`No SIMCom AT ports found: ${explainEmptyScan(report)}`);
     return;
   }
 
@@ -42,9 +42,8 @@ async function main(): Promise<void> {
     } catch (err) {
       const message = (err as Error).message;
       console.log(`   ✗ cannot open: ${message}`);
-      if (/permission denied|EACCES/i.test(message)) {
-        console.log('     Install the udev rule: see README, deploy/99-sim7070.rules');
-      }
+      const hint = diagnoseOpenError(message);
+      if (hint) console.log(`     ${hint}`);
       console.log();
       continue;
     }

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { discoverSerialCandidates, type SerialCandidate } from './discovery.js';
+import { explainEmptyScan, scanForModems, type SerialCandidate } from './discovery.js';
 import { Modem } from './modem.js';
+import { diagnoseOpenError } from './open-errors.js';
 import type { IncomingSms } from './sms-rx.js';
 import type { Repo } from '../store/repo.js';
 import type { Logger } from '../logger.js';
@@ -34,6 +35,7 @@ export class ModemRegistry extends EventEmitter {
   private readonly cooldowns = new Map<string, number>();
   private timer: NodeJS.Timeout | null = null;
   private scanning = false;
+  private lastEmptyReason: string | null = null;
   private stopped = false;
 
   constructor(opts: RegistryOptions) {
@@ -91,7 +93,20 @@ export class ModemRegistry extends EventEmitter {
     if (this.scanning || this.stopped) return;
     this.scanning = true;
     try {
-      const candidates = await discoverSerialCandidates(this.log);
+      const report = await scanForModems(this.log);
+      const candidates = report.candidates;
+
+      if (candidates.length === 0 && this.modems.size === 0) {
+        const reason = explainEmptyScan(report);
+        // Only once per distinct reason: this runs on every scan interval.
+        if (reason !== this.lastEmptyReason) {
+          this.lastEmptyReason = reason;
+          this.log.warn(`no modems found — ${reason}`);
+        }
+      } else {
+        this.lastEmptyReason = null;
+      }
+
       const present = new Set(candidates.map((c) => c.usbLocation));
 
       // Drop modems whose USB slot no longer reports a SIMCom AT port.
@@ -131,11 +146,9 @@ export class ModemRegistry extends EventEmitter {
       this.cooldowns.set(candidate.usbLocation, Date.now() + RETRY_COOLDOWN_MS);
       await modem.close().catch(() => undefined);
 
-      if (/permission denied|EACCES/i.test(message)) {
-        this.log.error(
-          { path: candidate.path },
-          'permission denied opening port — install deploy/99-sim7070.rules (see README)',
-        );
+      const hint = diagnoseOpenError(message);
+      if (hint) {
+        this.log.error({ path: candidate.path }, `cannot open port: ${hint}`);
       } else {
         this.log.warn({ path: candidate.path, err: message }, 'failed to attach modem');
       }
