@@ -27,9 +27,10 @@ export function formatIncomingSms(sms: IncomingSms, modemLabel: string): string 
   const parts = sms.parts > 1 ? ` · ${sms.parts} parts` : '';
   return [
     `📩 <code>${escapeHtml(sms.from)}</code> → <b>${escapeHtml(modemLabel)}</b>`,
-    `<i>${escapeHtml(formatTime(sms.timestamp))}${parts}</i>`,
     '',
     escapeHtml(sms.text),
+    '',
+    `<i>${escapeHtml(formatTime(sms.timestamp))}${parts}</i>`
   ].join('\n');
 }
 
