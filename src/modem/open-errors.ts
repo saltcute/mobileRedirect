@@ -1,3 +1,5 @@
+import { AtError, AtTimeoutError } from './at-channel.js';
+
 /** Turns a serial open() failure into an actionable hint. */
 export function diagnoseOpenError(message: string): string | null {
   if (/permission denied|EACCES/i.test(message)) {
@@ -32,4 +34,21 @@ export function diagnoseChannelLoss(message: string): string | null {
     );
   }
   return null;
+}
+
+/**
+ * True when a failed `AT+CPIN?` means the tray is empty.
+ *
+ * This is an *answer*: the module replied, and its reply was "there is no card".
+ * A timeout or a dead channel is the opposite — it says nothing about the SIM —
+ * and must never be read as a removal, or every busy command queue would look
+ * like someone pulling the card out. `AT+CMEE=2` is set during `configure()`, so
+ * the cause arrives as verbose text; the numeric form is matched too in case a
+ * firmware revision ignores that.
+ */
+export function isSimAbsentError(err: unknown): boolean {
+  if (err instanceof AtTimeoutError) return false;
+  if (!(err instanceof AtError)) return false;
+  const cause = err.code ?? '';
+  return /sim\s+(not\s+inserted|removed|failure)/i.test(cause) || /^1[03]$/.test(cause.trim());
 }

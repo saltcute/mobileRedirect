@@ -7,6 +7,8 @@ import { registerStatus } from './commands/status.js';
 import { registerNetwork } from './commands/network.js';
 import { registerReplyRouter } from './reply-router.js';
 import { formatIncomingSms } from './format.js';
+import { Notifier } from './notify.js';
+import * as alerts from './alerts.js';
 import type { IncomingSms } from '../modem/sms-rx.js';
 import type { Modem } from '../modem/modem.js';
 
@@ -26,12 +28,24 @@ export interface Gateway {
   bot: GatewayBot;
   /** Post an inbound SMS to every notify chat and link it for swipe-replies. */
   publishSms: (sms: IncomingSms, modem: Modem) => Promise<void>;
+  /** Push operational events to the operators' DMs. */
+  notifier: Notifier;
   notifyChatIds: number[];
 }
 
 export function createBot(deps: BotDeps): Gateway {
   const bot = new Bot(deps.config.TELEGRAM_BOT_TOKEN);
   const allowed = new Set(deps.config.ALLOWED_USER_IDS);
+
+  // Alerts go to the operators directly, never to NOTIFY_CHAT_IDS: a shared SMS
+  // group should not collect brownout reports, and an alert must never sit in a
+  // chat where replying to it would send an SMS.
+  const notifier = new Notifier({
+    bot,
+    chatIds: deps.config.ALLOWED_USER_IDS,
+    setting: deps.config.NOTIFY_EVENTS,
+    logger: deps.logger,
+  });
 
   /**
    * Authorisation gate.
@@ -48,6 +62,7 @@ export function createBot(deps: BotDeps): Gateway {
       { userId, username: ctx.from?.username, chatId: ctx.chat?.id },
       'rejected unauthorised telegram user',
     );
+    void notifier.send(alerts.unauthorised(userId, ctx.from?.username, ctx.chat?.id));
     if (ctx.chat) {
       await ctx.reply('Not authorised.').catch(() => undefined);
     }
@@ -99,7 +114,7 @@ export function createBot(deps: BotDeps): Gateway {
     }
   };
 
-  return { bot, publishSms, notifyChatIds };
+  return { bot, publishSms, notifier, notifyChatIds };
 }
 
 export async function publishCommandMenu(bot: GatewayBot): Promise<void> {

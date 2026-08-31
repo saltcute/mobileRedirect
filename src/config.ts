@@ -35,6 +35,16 @@ const schema = z.object({
   /** Chats that receive inbound SMS. Defaults to DMs with each allowed user. */
   NOTIFY_CHAT_IDS: idList.optional(),
 
+  /**
+   * How much operational noise to push to Telegram. Cumulative:
+   * `critical` ⊂ `normal` ⊂ `verbose`.
+   *
+   * These always go to `ALLOWED_USER_IDS` directly, never to `NOTIFY_CHAT_IDS` —
+   * a shared SMS group should not fill up with brownout reports, and an alert
+   * must never become a swipe-reply target that would send an SMS.
+   */
+  NOTIFY_EVENTS: z.enum(['off', 'critical', 'normal', 'verbose']).default('normal'),
+
   DB_PATH: z.string().default('./data/gateway.sqlite'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
 

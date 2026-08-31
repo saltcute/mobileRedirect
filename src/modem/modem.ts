@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import { AtChannel } from './at-channel.js';
 import { SmsReceiver, type IncomingSms } from './sms-rx.js';
 import { sendSms, type SendResult } from './sms-tx.js';
+import { isSimAbsentError } from './open-errors.js';
+import type { HealthSnapshot } from './health-state.js';
 import type { SerialCandidate } from './discovery.js';
 import type { Repo } from '../store/repo.js';
 import type { Logger } from '../logger.js';
@@ -48,6 +50,15 @@ export interface ModemStatus {
   systemInfo: string | null;
   storage: StorageInfo | null;
 }
+
+/**
+ * URCs the module emits when its own power or supply is in trouble.
+ *
+ * These are the module stating the problem outright, where "vanished from the
+ * USB bus" only lets us infer it after the fact. `AtChannel` already routes them
+ * to the URC bus; nothing consumed them before.
+ */
+const HARDWARE_URCS = ['UNDER-VOLTAGE', 'OVER-VOLTAGE', 'NORMAL POWER DOWN'];
 
 export interface ModemOptions {
   candidate: SerialCandidate;
@@ -99,6 +110,12 @@ export class Modem extends EventEmitter {
     this.channel.on('failed', (err: Error) => {
       this.log.warn({ err: err.message }, 'modem channel lost');
       this.emit('lost', err);
+    });
+
+    this.channel.on('urc', (line: string) => {
+      if (!HARDWARE_URCS.some((p) => line.startsWith(p))) return;
+      this.log.warn({ urc: line }, 'module reported a power condition');
+      this.emit('hardware', line);
     });
 
     await this.handshake();
@@ -268,6 +285,40 @@ export class Modem extends EventEmitter {
       // As above.
     }
     return { carrier, bars };
+  }
+
+  /**
+   * Two-command health sample for background monitoring.
+   *
+   * Deliberately cheaper than `status()`: this runs on every scan interval for
+   * every attached module, where `status()` runs when a human asks.
+   *
+   * Every field is optional because "the modem did not answer" and "the modem
+   * answered with bad news" are different findings, and only the second is worth
+   * waking someone for. Callers must treat null as *unknown*, never as zero.
+   */
+  async health(): Promise<HealthSnapshot> {
+    let simState: string | null = null;
+    let simAbsent = false;
+    try {
+      simState = parseCpin(await this.channel.execute('AT+CPIN?', 5000));
+    } catch (err) {
+      // An empty tray fails the command rather than answering it, so the error
+      // has to be classified: only "SIM not inserted" is a real removal.
+      if (isSimAbsentError(err)) simAbsent = true;
+    }
+
+    let bars: number | null = null;
+    try {
+      const signal = parseCsq(await this.channel.execute('AT+CSQ', 5000));
+      // rssi 99 maps to 0 bars but means "unknown". Passing that through as 0
+      // would raise a low-signal alert every time the reading was unavailable.
+      bars = signal && signal.dbm !== null ? signal.bars : null;
+    } catch {
+      // Leave it unknown; a dead channel is reported by the poll path instead.
+    }
+
+    return { simState, simAbsent, bars };
   }
 
   // ------------------------------------------------------- network selection

@@ -49,6 +49,30 @@ flag a modem that is locked and unregistered.
 native reply on it and the text goes back to that sender — on the modem that
 received it, regardless of the current `/select`.
 
+## Monitoring
+
+The gateway also pushes operational events to `ALLOWED_USER_IDS` as DMs, so a
+headless box can be watched without `journalctl`. `NOTIFY_EVENTS` sets how much:
+
+| Level | What arrives |
+| --- | --- |
+| `off` | nothing but incoming SMS |
+| `critical` | only what means the gateway is not working: a port that will not open (with the `EACCES`/`EBUSY` diagnosis), a module that vanished from USB or stopped answering, SIM removed or locked, an `UNDER-VOLTAGE` report, an unauthorised access attempt |
+| `normal` (default) | the above, plus start/stop, modems connecting and reconnecting (with how long they were gone), SIM installed, and sustained weak signal |
+| `verbose` | the above, plus recoveries and ordinary disconnects |
+
+Alerts go to the allowed users directly and never to `NOTIFY_CHAT_IDS`. That is
+deliberate twice over: a shared SMS group should not fill with brownout reports,
+and an alert must never sit in a chat where replying to it would send an SMS.
+
+Repeating conditions are throttled per cause — a port retried every 60s produces
+one message every 15 minutes, with `(+N more since the last alert)` rather than
+N messages — and a flapping module is caught by a global cap. State changes are
+edge-triggered, so nothing repeats while it stays the same, and weak signal needs
+three consecutive samples in each direction so a modem parked at the threshold
+does not flap. A reading the module fails to answer counts as *unknown*, never as
+zero or absent: a busy command queue must not look like someone pulling the SIM.
+
 ## Requirements
 
 - **Node.js 24+** — uses the built-in `node:sqlite`, so there is no
@@ -195,14 +219,16 @@ prints URCs as they arrive — the quickest way to watch a `+CMTI` land.
 ## Testing
 
 ```bash
-npm test        # 55 tests, no hardware required
+npm test        # 117 tests, no hardware required
 npm run typecheck
 ```
 
 Covers PDU encode/decode (GSM-7, UCS-2, multipart), concat reassembly including
 out-of-order arrival and the stale flush, crash-replay dedupe, and the AT channel
 against a mock serial device — URC interleaving, `+CME ERROR`, the newline-less
-`>` send prompt, and the ESC abort path.
+`>` send prompt, and the ESC abort path. Also the notification layer: level
+filtering, per-cause throttling, and the health-state hysteresis — including that
+an unreadable sample is treated as unknown rather than as a removal.
 
 ## Security notes
 
