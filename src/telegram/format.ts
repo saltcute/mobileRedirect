@@ -26,11 +26,11 @@ function formatTime(value: string | number | null): string {
 export function formatIncomingSms(sms: IncomingSms, modemLabel: string): string {
   const parts = sms.parts > 1 ? ` · ${sms.parts} parts` : '';
   return [
-    `📩 <code>${escapeHtml(sms.from)}</code> → <b>${escapeHtml(modemLabel)}</b>`,
+    `📩 <code>${escapeHtml(sms.from)}</code>`,
     '',
     escapeHtml(sms.text),
     '',
-    `<i>${escapeHtml(formatTime(sms.timestamp))}${parts}</i>`
+    `→ <b>${escapeHtml(modemLabel)}</b> @ <i>${escapeHtml(formatTime(sms.timestamp))}${parts}</i>`
   ].join('\n');
 }
 
